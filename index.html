@@ -2,20 +2,26 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Обновить</title>
   <style>
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      margin: 0;
+    }
+
     body {
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      margin: 0;
       background: #f2f2f2;
       font-family: Arial, sans-serif;
+      position: fixed;
+      inset: 0;
     }
 
-    /* Базовый размер — для десктопа */
     .fake-refresh {
       width: 32px;
       height: 32px;
@@ -28,18 +34,15 @@
       align-items: center;
       justify-content: center;
       color: #5f6368;
-      transition: background 0.15s;
+      transition: background 0.15s, opacity 0.2s;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
     }
 
-    .fake-refresh:hover {
-      background: rgba(0, 0, 0, 0.06);
-    }
-
-    .fake-refresh:active {
-      background: rgba(0, 0, 0, 0.12);
-    }
+    .fake-refresh:hover   { background: rgba(0,0,0,0.06); }
+    .fake-refresh:active  { background: rgba(0,0,0,0.12); }
 
     .fake-refresh svg {
       width: 20px;
@@ -57,46 +60,95 @@
       to   { transform: rotate(360deg); }
     }
 
-    /* Телефоны и планшеты — кнопка крупнее */
+    .fake-refresh.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .qr-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 9999;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+    }
+
+    .qr-overlay.show {
+      display: flex;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    .qr-card {
+      background: #fff;
+      padding: 16px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      max-width: 85vw;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    /* QR теперь фон у div, а не <img> — Chrome не показывает панель поиска */
+    .qr-image {
+      width: 260px;
+      height: 260px;
+      max-width: 70vw;
+      max-height: 70vw;
+      background-color: #fff;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      image-rendering: pixelated;
+      pointer-events: none;      /* чтобы долгий тап вообще не попадал по картинке */
+      -webkit-user-drag: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    .qr-hint {
+      font-size: 13px;
+      color: #666;
+      text-align: center;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
     @media (max-width: 768px) {
-      .fake-refresh {
-        width: 56px;
-        height: 56px;
-      }
-      .fake-refresh svg {
-        width: 32px;
-        height: 32px;
-      }
+      .fake-refresh      { width: 56px; height: 56px; }
+      .fake-refresh svg  { width: 32px; height: 32px; }
     }
-
-    /* Совсем маленькие экраны — ещё крупнее */
     @media (max-width: 380px) {
-      .fake-refresh {
-        width: 64px;
-        height: 64px;
-      }
-      .fake-refresh svg {
-        width: 36px;
-        height: 36px;
-      }
+      .fake-refresh      { width: 64px; height: 64px; }
+      .fake-refresh svg  { width: 36px; height: 36px; }
     }
-
-    /* Устройства с тач-экраном — увеличиваем зону нажатия */
     @media (hover: none) and (pointer: coarse) {
-      .fake-refresh {
-        width: 56px;
-        height: 56px;
-      }
-      .fake-refresh svg {
-        width: 32px;
-        height: 32px;
-      }
+      .fake-refresh      { width: 56px; height: 56px; }
+      .fake-refresh svg  { width: 32px; height: 32px; }
     }
   </style>
 </head>
 <body>
 
-  <button class="fake-refresh" id="fakeRefresh" title="Обновить" aria-label="Обновить">
+  <button class="fake-refresh" id="fakeRefresh" aria-label="Обновить">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
@@ -104,18 +156,88 @@
     </svg>
   </button>
 
+  <div class="qr-overlay" id="qrOverlay">
+    <div class="qr-card">
+      <div class="qr-image" id="qrImage"></div>
+      <div class="qr-hint">Нажми, чтобы закрыть</div>
+    </div>
+  </div>
+
   <audio id="secretAudio" src="sound.mp3" preload="auto"></audio>
 
   <script>
-    const btn = document.getElementById('fakeRefresh');
-    const audio = document.getElementById('secretAudio');
+    const btn     = document.getElementById('fakeRefresh');
+    const audio   = document.getElementById('secretAudio');
+    const overlay = document.getElementById('qrOverlay');
+    const qrImage = document.getElementById('qrImage');
 
-    btn.addEventListener('click', () => {
+    const LINK   = 'https://bbqquuiieedd.github.io/Web-Prank/';
+    const QR_URL = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data='
+                 + encodeURIComponent(LINK);
+
+    // Ставим QR как background-image, а не как <img>
+    qrImage.style.backgroundImage = `url("${QR_URL}")`;
+
+    const LONG_PRESS_MS = 500;
+    let pressTimer  = null;
+    let longPressed = false;
+
+    function onPointerDown(e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+
+      longPressed = false;
+      clearTimeout(pressTimer);
+
+      pressTimer = setTimeout(() => {
+        longPressed = true;
+        showQR();
+      }, LONG_PRESS_MS);
+    }
+
+    function onPointerUp() {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+
+      if (longPressed) {
+        longPressed = false;
+        return;
+      }
+
       btn.classList.add('spinning');
       audio.loop = true;
       audio.volume = 1.0;
       audio.play().catch(err => console.error('Ошибка звука:', err));
-    });
+    }
+
+    function onPointerCancel() {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+      longPressed = false;
+    }
+
+    function showQR() {
+      overlay.classList.add('show');
+      btn.classList.add('hidden');
+    }
+
+    function hideQR() {
+      overlay.classList.remove('show');
+      btn.classList.remove('hidden');
+    }
+
+    btn.addEventListener('pointerdown', onPointerDown);
+    btn.addEventListener('pointerup',   onPointerUp);
+    btn.addEventListener('pointercancel', onPointerCancel);
+
+    // Запрет контекстного меню и подсказок при долгом тапе
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    overlay.addEventListener('click', hideQR);
+
+    document.addEventListener('touchmove', e => {
+      if (!overlay.classList.contains('show')) e.preventDefault();
+    }, { passive: false });
   </script>
 
 </body>
